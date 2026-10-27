@@ -22,6 +22,7 @@ services:
       PG_DATABASE: analytics_db
       PG_PORT: 5432
       BASE_URL: http://localhost:3000
+      GOOGLE_SAFE_BROWSING_KEY: ${GOOGLE_SAFE_BROWSING_KEY:-}
     depends_on:
       - postgres
     volumes:

@@ -310,6 +310,26 @@
         return;
       }
 
+      // Google Safe Browsing / Threat Check
+      try {
+        const safetyRes = await fetch('/api/safety/check?url=' + encodeURIComponent(destination));
+        if (safetyRes.ok) {
+          const safetyData = await safetyRes.json();
+          if (safetyData && safetyData.safe === false) {
+            const threatLabel = safetyData.threatType ? safetyData.threatType.replace(/_/g, ' ') : 'Malicious Content';
+            stopEverything(
+              'badge-expired',
+              '⚠️',
+              'Dangerous Link Blocked',
+              `Security check alert: ${threatLabel}. Redirection has been blocked for your protection.`
+            );
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('Safety check check skipped', e);
+      }
+
       // Check Expiration Schedule
       if (expiresAt && new Date() > new Date(expiresAt)) {
         stopEverything(

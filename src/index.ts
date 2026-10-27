@@ -12,6 +12,7 @@ if (typeof (process as any).loadEnvFile === 'function') {
 import { connectDB } from './config/db.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { redirectRoutes } from './routes/redirect.js';
+import { safetyRoutes } from './routes/safety.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,6 +36,7 @@ async function bootstrap() {
 
     await analyticsRoutes(fastify);
     await redirectRoutes(fastify);
+    await safetyRoutes(fastify);
 
     // SPA fallback — never serve HTML for missing JS/CSS (that blanks the app)
     fastify.setNotFoundHandler((request, reply) => {
