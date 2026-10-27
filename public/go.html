@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Redirecting…</title>
-  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+  <script src="/assets/lz-string.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -91,7 +91,7 @@
         // Try LZString
         if (window.LZString) {
           try {
-            const decomp = LZString.decompressFromEncodedURIComponent(trimmed);
+            const decomp = window.LZString.decompressFromEncodedURIComponent(trimmed);
             if (decomp && /^https?:\/\//i.test(decomp)) return decomp;
           } catch (e) {}
         }
@@ -142,7 +142,7 @@
 
           // 4. Local storage fallback
           try {
-            const keys = ['linkpulse_links_v2', 'linko_links', 'links'];
+            const keys = ['lp_local_links', 'linkpulse_links_v2', 'linko_links', 'links'];
             for (const key of keys) {
               const raw = localStorage.getItem(key);
               if (raw) {
