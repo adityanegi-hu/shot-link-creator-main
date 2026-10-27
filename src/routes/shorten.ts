@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getDB } from '../config/db.js';
 import { z } from 'zod';
+import { randomUUID } from 'crypto';
 
 const ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const CODE_LEN = 6;
@@ -9,6 +10,21 @@ function randomCode(): string {
   const bytes = new Uint8Array(CODE_LEN);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, b => ALPHABET[b % 62]).join('');
+}
+
+function buildResponse(code: string, url: string, base: string) {
+  return {
+    id: randomUUID(),      // SPA may check for id presence
+    code,
+    shortCode: code,
+    short_code: code,
+    shortUrl: `${base}/r/${code}`,
+    url,
+    original_url: url,
+    originalUrl: url,
+    status: 'active',      // SPA may check status === 'active'
+    qrCode: '',
+  };
 }
 
 const ShortenSchema = z.object({
@@ -28,22 +44,13 @@ export async function shortenRoutes(fastify: FastifyInstance) {
     const db = getDB();
     const base = process.env.BASE_URL || 'http://localhost:3000';
 
-    // Check if URL already has a code (dedup)
+    // Dedup: return existing code if URL was already shortened
     const existing = await db.query('SELECT code FROM links WHERE url = $1 LIMIT 1', [targetUrl]);
     if (existing.rows.length > 0) {
-      const code = existing.rows[0].code;
-      return {
-        code,
-        shortCode: code,
-        short_code: code,
-        shortUrl: `${base}/r/${code}`,
-        url: targetUrl,
-        originalUrl: targetUrl,
-        original_url: targetUrl,
-      };
+      return buildResponse(existing.rows[0].code, targetUrl, base);
     }
 
-    // Generate a unique 6-character code (collision retry)
+    // Generate unique 6-char code with collision retry
     let code = '';
     for (let attempt = 0; attempt < 5; attempt++) {
       const candidate = randomCode();
@@ -54,15 +61,7 @@ export async function shortenRoutes(fastify: FastifyInstance) {
 
     await db.query('INSERT INTO links (code, url) VALUES ($1, $2)', [code, targetUrl]);
 
-    return {
-      code,
-      shortCode: code,
-      short_code: code,
-      shortUrl: `${base}/r/${code}`,
-      url: targetUrl,
-      originalUrl: targetUrl,
-      original_url: targetUrl,
-    };
+    return buildResponse(code, targetUrl, base);
   };
 
   fastify.post('/api/shorten', handleShorten);
