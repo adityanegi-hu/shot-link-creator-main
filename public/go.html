@@ -35,8 +35,48 @@
       margin: 0 auto 1.5rem;
       animation: spin 0.8s linear infinite;
     }
+    .icon-badge {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.25rem;
+      font-size: 1.75rem;
+    }
+    .badge-expired {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #ef4444;
+    }
+    .badge-limit {
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      color: #f59e0b;
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
     h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .status-pill {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      margin-bottom: 0.75rem;
+    }
+    .pill-active {
+      background: rgba(16, 185, 129, 0.15);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .pill-inactive {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
     .url {
       font-size: 0.82rem;
       color: #a3a3a3;
@@ -65,12 +105,36 @@
       text-decoration: underline;
       font-size: 0.85rem;
     }
-    .error { color: #f87171; margin-top: 1rem; font-size: 0.9rem; }
+    .error-box {
+      color: #f87171;
+      margin-top: 1rem;
+      font-size: 0.88rem;
+      line-height: 1.5;
+      padding: 0.75rem 1rem;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      border-radius: 10px;
+    }
+    .home-btn {
+      display: inline-block;
+      margin-top: 1.25rem;
+      padding: 0.5rem 1.25rem;
+      background: #262626;
+      color: #fff;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .home-btn:hover { background: #333; }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="spinner" id="spinner"></div>
+    <div class="icon-badge" id="icon-badge"></div>
+    <div id="status-container"></div>
     <h1 id="title">Redirecting you…</h1>
     <div class="url" id="url-display">Resolving destination…</div>
     <div class="countdown" id="countdown">5</div>
@@ -78,11 +142,44 @@
     <div>
       <a href="#" id="direct-link" class="manual-link" style="display:none">Click here if not redirected automatically</a>
     </div>
-    <div class="error" id="error" style="display:none"></div>
+    <div class="error-box" id="error" style="display:none"></div>
+    <div id="action-container" style="display:none">
+      <a href="/" class="home-btn">Create a New Short Link</a>
+    </div>
   </div>
 
   <script>
-    (function () {
+    (async function () {
+      let countdownTimer = null;
+
+      function stopEverything(badgeType, iconChar, title, message) {
+        if (countdownTimer) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+        }
+        document.getElementById('spinner').style.display = 'none';
+        const badge = document.getElementById('icon-badge');
+        badge.className = 'icon-badge ' + badgeType;
+        badge.textContent = iconChar;
+        badge.style.display = 'flex';
+
+        document.getElementById('status-container').innerHTML =
+          '<span class="status-pill pill-inactive">Link Inactive</span>';
+
+        document.getElementById('title').textContent = title;
+        document.getElementById('url-display').style.display = 'none';
+        document.getElementById('countdown').style.display = 'none';
+        document.getElementById('countdown-sub').style.display = 'none';
+        document.getElementById('direct-link').style.display = 'none';
+
+        const err = document.getElementById('error');
+        err.textContent = message;
+        err.style.display = 'block';
+
+        document.getElementById('action-container').style.display = 'block';
+        document.title = title + ' — Linko';
+      }
+
       function tryDecode(raw) {
         if (!raw) return null;
         let trimmed = raw.trim();
@@ -92,6 +189,10 @@
         if (window.LZString) {
           try {
             const decomp = window.LZString.decompressFromEncodedURIComponent(trimmed);
+            if (decomp && /^https?:\/\//i.test(decomp)) return decomp;
+          } catch (e) {}
+          try {
+            const decomp = window.LZString.decompressFromEncodedURIComponent(decodeURIComponent(trimmed));
             if (decomp && /^https?:\/\//i.test(decomp)) return decomp;
           } catch (e) {}
         }
@@ -113,69 +214,121 @@
         return null;
       }
 
-      function resolveDestination() {
-        const params = new URLSearchParams(window.location.search);
-        
-        // 1. Direct query param
-        if (params.get('url')) {
-          const u = tryDecode(params.get('url'));
-          if (u) return u;
+      // 1. Resolve pathCode and URL params
+      const params = new URLSearchParams(window.location.search);
+      let pathCode = '';
+      const rMatch = window.location.pathname.match(/^\/(?:r|go)\/(.+)$/);
+      if (rMatch) {
+        pathCode = decodeURIComponent(rMatch[1].replace(/\/+$/, ''));
+      } else {
+        const rootMatch = window.location.pathname.match(/^\/([0-9a-zA-Z_-]+)$/);
+        if (rootMatch && !['index.html', 'go.html', 'favicon.ico', 'go', 'app', 'shorten'].includes(rootMatch[1])) {
+          pathCode = decodeURIComponent(rootMatch[1]);
         }
-        if (params.get('c')) {
-          const u = tryDecode(params.get('c'));
-          if (u) return u;
-        }
-
-        // 2. Hash (#...)
-        if (window.location.hash) {
-          const hash = window.location.hash.slice(1);
-          const u = tryDecode(hash);
-          if (u) return u;
-        }
-
-        // 3. Path parameter (e.g. /r/:code or /go/:code)
-        const match = window.location.pathname.match(/^\/(?:r|go)\/(.+)$/);
-        const pathCode = match ? match[1].replace(/\/+$/, '') : '';
-        if (pathCode) {
-          const u = tryDecode(pathCode);
-          if (u) return u;
-
-          // 4. Local storage fallback
-          try {
-            const keys = ['lp_local_links', 'linkpulse_links_v2', 'linko_links', 'links'];
-            for (const key of keys) {
-              const raw = localStorage.getItem(key);
-              if (raw) {
-                const list = JSON.parse(raw);
-                if (Array.isArray(list)) {
-                  const found = list.find(l => 
-                    (l.shortCode && l.shortCode.toLowerCase() === pathCode.toLowerCase()) ||
-                    (l.code && l.code.toLowerCase() === pathCode.toLowerCase()) ||
-                    (l.id && l.id.toLowerCase() === pathCode.toLowerCase())
-                  );
-                  if (found) {
-                    const dest = found.originalUrl || found.url || found.targetUrl;
-                    if (dest) return dest;
-                  }
-                }
-              }
-            }
-          } catch (e) {}
-        }
-
-        return null;
       }
 
-      const destination = resolveDestination();
+      let clickLimit = null;
+      if (params.get('limit')) {
+        const parsed = parseInt(params.get('limit'), 10);
+        if (!isNaN(parsed) && parsed > 0) clickLimit = parsed;
+      }
 
+      let destination = null;
+      let matchedLink = null;
+      let storageKey = null;
+      let storageList = null;
+      let expiresAt = null;
+
+      // 1. Direct query param
+      if (params.get('url')) {
+        destination = tryDecode(params.get('url'));
+      } else if (params.get('c')) {
+        destination = tryDecode(params.get('c'));
+      }
+
+      // 2. Hash (#...)
+      if (!destination && window.location.hash) {
+        const hash = window.location.hash.slice(1);
+        destination = tryDecode(hash);
+      }
+
+      // 3. Path code decode (if it was an encoded URL)
+      if (!destination && pathCode) {
+        destination = tryDecode(pathCode);
+      }
+
+      // 4. Local storage lookup
+      try {
+        const keys = ['lp_local_links', 'linkpulse_links_v2', 'linko_links', 'links'];
+        for (const key of keys) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              const found = list.find(l => 
+                (l.shortCode && pathCode && l.shortCode.toLowerCase() === pathCode.toLowerCase()) ||
+                (l.code && pathCode && l.code.toLowerCase() === pathCode.toLowerCase()) ||
+                (l.id && pathCode && l.id.toLowerCase() === pathCode.toLowerCase())
+              );
+              if (found) {
+                matchedLink = found;
+                storageKey = key;
+                storageList = list;
+                if (!destination) {
+                  destination = found.originalUrl || found.url || found.targetUrl;
+                }
+                if (!clickLimit) {
+                  if (found.rules?.clickLimit) clickLimit = parseInt(found.rules.clickLimit, 10);
+                  else if (found.clickLimit) clickLimit = parseInt(found.clickLimit, 10);
+                }
+                if (found.rules?.expiresAt) expiresAt = found.rules.expiresAt;
+                else if (found.expiresAt) expiresAt = found.expiresAt;
+                break;
+              }
+            }
+          }
+        }
+      } catch (e) {}
+
+      // 5. Backend sync resolve (for fresh browser / incognito / cross-device)
+      if (!destination && pathCode) {
+        try {
+          const res = await fetch('/api/analytics/resolve?code=' + encodeURIComponent(pathCode));
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.url) {
+              destination = data.url;
+              if (!clickLimit && data.limit) clickLimit = parseInt(data.limit, 10);
+            }
+          }
+        } catch (e) {}
+      }
+
+      // Validation check
       if (!destination || !/^https?:\/\//i.test(destination)) {
-        document.getElementById('spinner').style.display = 'none';
-        document.getElementById('title').textContent = 'Link Not Found';
-        document.getElementById('url-display').style.display = 'none';
-        document.getElementById('countdown').style.display = 'none';
-        document.getElementById('countdown-sub').style.display = 'none';
-        document.getElementById('error').textContent = 'No valid destination URL could be decoded.';
-        document.getElementById('error').style.display = 'block';
+        stopEverything('badge-expired', '?', 'Link Not Found', 'No valid destination URL could be resolved for this link.');
+        return;
+      }
+
+      // Check Expiration Schedule
+      if (expiresAt && new Date() > new Date(expiresAt)) {
+        stopEverything(
+          'badge-expired',
+          '⏰',
+          'Link Expired',
+          `This link was scheduled to expire on ${new Date(expiresAt).toLocaleString()} and is no longer active.`
+        );
+        return;
+      }
+
+      // Check Client-side Click Limit
+      if (clickLimit && matchedLink && typeof matchedLink.clicksCount === 'number' && matchedLink.clicksCount >= clickLimit) {
+        stopEverything(
+          'badge-limit',
+          '🛑',
+          'Click Limit Reached',
+          `This link has reached its maximum visit limit of ${clickLimit} clicks and is no longer active.`
+        );
         return;
       }
 
@@ -186,24 +339,53 @@
       directLink.href = destination;
       directLink.style.display = 'inline-block';
 
-      // Send analytics (URL, hit timestamp, user agent is sent in headers)
+      // Send Click to Analytics with Click Limit verification
       fetch('/api/analytics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: destination,
+          code: pathCode || '',
+          limit: clickLimit,
           timestamp: new Date().toISOString()
         })
-      }).catch(err => console.warn('Analytics ping failed', err));
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.allowed === false) {
+          stopEverything(
+            'badge-limit',
+            '🛑',
+            'Click Limit Reached',
+            data.message || `This link has reached its maximum visit limit of ${data.limit || clickLimit} clicks.`
+          );
+          return;
+        }
+
+        // Update local storage click count if matched
+        if (matchedLink && storageKey && storageList) {
+          matchedLink.clicksCount = (matchedLink.clicksCount || 0) + 1;
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(storageList));
+          } catch (e) {}
+        }
+
+        if (clickLimit && data && data.count) {
+          document.getElementById('countdown-sub').textContent =
+            `Visit ${data.count} of ${clickLimit} · redirecting in seconds`;
+        }
+      })
+      .catch(err => console.warn('Analytics ping failed', err));
 
       // 5-second countdown then redirect
       let remaining = 5;
       const el = document.getElementById('countdown');
-      const tick = setInterval(() => {
+      countdownTimer = setInterval(() => {
         remaining -= 1;
         el.textContent = remaining;
         if (remaining <= 0) {
-          clearInterval(tick);
+          clearInterval(countdownTimer);
+          countdownTimer = null;
           window.location.href = destination;
         }
       }, 1000);

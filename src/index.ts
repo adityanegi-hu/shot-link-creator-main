@@ -25,14 +25,24 @@ async function bootstrap() {
     await fastify.register(fastifyStatic, {
       root: path.join(__dirname, '..', 'public'),
       prefix: '/',
+      setHeaders(reply, filePath) {
+        reply.header('Access-Control-Allow-Origin', '*');
+        if (/\.(?:js|css|html)$/i.test(filePath)) {
+          reply.header('Cache-Control', 'no-cache, must-revalidate');
+        }
+      },
     });
 
     await analyticsRoutes(fastify);
     await redirectRoutes(fastify);
 
-    // SPA fallback
-    fastify.setNotFoundHandler((_request, reply) => {
-      reply.sendFile('index.html');
+    // SPA fallback — never serve HTML for missing JS/CSS (that blanks the app)
+    fastify.setNotFoundHandler((request, reply) => {
+      const url = request.raw.url || '';
+      if (url.startsWith('/api') || url.startsWith('/assets') || /\.(js|css|map|json|ico|png|svg)$/i.test(url)) {
+        return reply.code(404).send({ error: 'Not found' });
+      }
+      return reply.sendFile('index.html');
     });
 
     await fastify.listen({ port: 3000, host: '0.0.0.0' });
