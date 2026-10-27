@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Redirecting…</title>
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0a0a0a;
+      color: #e5e5e5;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      text-align: center;
+      padding: 2.5rem 3rem;
+      border: 1px solid #262626;
+      border-radius: 16px;
+      background: #111;
+      max-width: 480px;
+      width: 90%;
+    }
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid #262626;
+      border-top-color: #e5e5e5;
+      border-radius: 50%;
+      margin: 0 auto 1.5rem;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .url {
+      font-size: 0.8rem;
+      color: #737373;
+      word-break: break-all;
+      margin-bottom: 1.25rem;
+      max-height: 3rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .countdown {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.5rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .sub { font-size: 0.8rem; color: #525252; }
+    .error { color: #ef4444; margin-top: 1rem; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner"></div>
+    <h1>Redirecting you…</h1>
+    <div class="url" id="url-display"></div>
+    <div class="countdown" id="countdown">5</div>
+    <div class="sub">seconds</div>
+    <div class="error" id="error" style="display:none"></div>
+  </div>
+
+  <script>
+    (function () {
+      const hash = window.location.hash.slice(1); // remove leading #
+
+      if (!hash) {
+        document.getElementById('error').textContent = 'No destination URL found.';
+        document.getElementById('error').style.display = 'block';
+        return;
+      }
+
+      let destination;
+      try {
+        destination = LZString.decompressFromEncodedURIComponent(hash);
+        if (!destination || !destination.startsWith('http')) throw new Error('bad url');
+      } catch (e) {
+        document.getElementById('error').textContent = 'Invalid or corrupted link.';
+        document.getElementById('error').style.display = 'block';
+        return;
+      }
+
+      document.getElementById('url-display').textContent = destination;
+      document.title = 'Redirecting to ' + destination;
+
+      // Fire analytics (best-effort, don't block redirect)
+      fetch('/api/analytics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: destination }),
+      }).catch(() => {});
+
+      // 5-second countdown then redirect
+      let remaining = 5;
+      const el = document.getElementById('countdown');
+      const tick = setInterval(() => {
+        remaining -= 1;
+        el.textContent = remaining;
+        if (remaining <= 0) {
+          clearInterval(tick);
+          window.location.href = destination;
+        }
+      }, 1000);
+    })();
+  </script>
+</body>
+</html>
