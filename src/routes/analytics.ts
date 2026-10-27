@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getDB } from '../config/db.js';
 import { z } from 'zod';
+import net from 'net';
 
 const TrackSchema = z.object({
   url: z.string().url(),
@@ -11,12 +12,13 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
   fastify.post('/api/analytics', async (request, reply) => {
     const body = TrackSchema.parse(request.body);
     const db = getDB();
-    const ip = request.headers['x-forwarded-for']?.toString().split(',')[0].trim()
-               ?? request.ip;
+    const rawIp = (request.headers['x-forwarded-for']?.toString().split(',')[0].trim()
+               ?? request.ip ?? '').replace(/^::ffff:/, '');
+    const ip = net.isIP(rawIp) ? rawIp : null;
 
     await db.query(
-      'INSERT INTO analytics (original_url, ip_address, user_agent) VALUES ($1, $2::inet, $3)',
-      [body.url, ip || null, request.headers['user-agent'] || null]
+      'INSERT INTO analytics (original_url, ip_address, user_agent) VALUES ($1, $2, $3)',
+      [body.url, ip, request.headers['user-agent'] || null]
     );
 
     return reply.status(204).send();

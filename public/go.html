@@ -68,20 +68,20 @@
 
   <script>
     (function () {
-      const hash = window.location.hash.slice(1); // remove leading #
+      const params = new URLSearchParams(window.location.search);
+      let destination = params.get('url');
 
-      if (!hash) {
-        document.getElementById('error').textContent = 'No destination URL found.';
-        document.getElementById('error').style.display = 'block';
-        return;
+      if (!destination) {
+        const hash = window.location.hash.slice(1); // fallback to #hash
+        if (hash) {
+          try {
+            destination = LZString.decompressFromEncodedURIComponent(hash);
+          } catch (e) {}
+        }
       }
 
-      let destination;
-      try {
-        destination = LZString.decompressFromEncodedURIComponent(hash);
-        if (!destination || !destination.startsWith('http')) throw new Error('bad url');
-      } catch (e) {
-        document.getElementById('error').textContent = 'Invalid or corrupted link.';
+      if (!destination || !destination.startsWith('http')) {
+        document.getElementById('error').textContent = 'No valid destination URL found.';
         document.getElementById('error').style.display = 'block';
         return;
       }

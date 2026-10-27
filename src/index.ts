@@ -1,10 +1,18 @@
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+if (typeof (process as any).loadEnvFile === 'function') {
+  try {
+    (process as any).loadEnvFile();
+  } catch {}
+}
+
 import { connectDB } from './config/db.js';
 import { shortenRoutes } from './routes/shorten.js';
 import { analyticsRoutes } from './routes/analytics.js';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { redirectRoutes } from './routes/redirect.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,13 +28,12 @@ async function bootstrap() {
       prefix: '/',
     });
 
-    // Serve go.html for the /go path
-    fastify.get('/go', (_request, reply) => {
-      reply.sendFile('go.html');
-    });
+    // Serve go.html for /go (before SPA fallback)
+    fastify.get('/go', (_request, reply) => reply.sendFile('go.html'));
 
     await shortenRoutes(fastify);
     await analyticsRoutes(fastify);
+    await redirectRoutes(fastify);
 
     // SPA fallback
     fastify.setNotFoundHandler((_request, reply) => {
