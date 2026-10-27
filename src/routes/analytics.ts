@@ -5,7 +5,9 @@ import net from 'net';
 
 const TrackSchema = z.object({
   url: z.string().url(),
-});
+  code: z.string().optional(),
+  timestamp: z.any().optional(),
+}).passthrough();
 
 export async function analyticsRoutes(fastify: FastifyInstance) {
   // Record a click

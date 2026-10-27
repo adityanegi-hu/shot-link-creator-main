@@ -8,7 +8,7 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #0a0a0a;
       color: #e5e5e5;
       min-height: 100vh;
@@ -18,12 +18,13 @@
     }
     .card {
       text-align: center;
-      padding: 2.5rem 3rem;
+      padding: 2.5rem 2rem;
       border: 1px solid #262626;
       border-radius: 16px;
       background: #111;
       max-width: 480px;
       width: 90%;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
     }
     .spinner {
       width: 48px;
@@ -37,51 +38,143 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
     .url {
-      font-size: 0.8rem;
-      color: #737373;
+      font-size: 0.82rem;
+      color: #a3a3a3;
       word-break: break-all;
       margin-bottom: 1.25rem;
-      max-height: 3rem;
+      max-height: 4.5rem;
       overflow: hidden;
       text-overflow: ellipsis;
+      padding: 0.5rem;
+      background: #181818;
+      border-radius: 8px;
+      border: 1px solid #282828;
     }
     .countdown {
-      font-size: 2.5rem;
+      font-size: 3rem;
       font-weight: 700;
       color: #fff;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0.25rem;
       font-variant-numeric: tabular-nums;
     }
-    .sub { font-size: 0.8rem; color: #525252; }
-    .error { color: #ef4444; margin-top: 1rem; font-size: 0.9rem; }
+    .sub { font-size: 0.85rem; color: #737373; margin-bottom: 1rem; }
+    .manual-link {
+      display: inline-block;
+      margin-top: 0.5rem;
+      color: #38bdf8;
+      text-decoration: underline;
+      font-size: 0.85rem;
+    }
+    .error { color: #f87171; margin-top: 1rem; font-size: 0.9rem; }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="spinner"></div>
-    <h1>Redirecting you…</h1>
-    <div class="url" id="url-display"></div>
+    <div class="spinner" id="spinner"></div>
+    <h1 id="title">Redirecting you…</h1>
+    <div class="url" id="url-display">Resolving destination…</div>
     <div class="countdown" id="countdown">5</div>
-    <div class="sub">seconds</div>
+    <div class="sub" id="countdown-sub">seconds remaining</div>
+    <div>
+      <a href="#" id="direct-link" class="manual-link" style="display:none">Click here if not redirected automatically</a>
+    </div>
     <div class="error" id="error" style="display:none"></div>
   </div>
 
   <script>
     (function () {
-      const params = new URLSearchParams(window.location.search);
-      let destination = params.get('url');
+      function tryDecode(raw) {
+        if (!raw) return null;
+        let trimmed = raw.trim();
+        if (/^https?:\/\//i.test(trimmed)) return trimmed;
 
-      if (!destination) {
-        const hash = window.location.hash.slice(1); // fallback to #hash
-        if (hash) {
+        // Try LZString
+        if (window.LZString) {
           try {
-            destination = LZString.decompressFromEncodedURIComponent(hash);
+            const decomp = LZString.decompressFromEncodedURIComponent(trimmed);
+            if (decomp && /^https?:\/\//i.test(decomp)) return decomp;
           } catch (e) {}
         }
+
+        // Try base64
+        try {
+          let b64 = trimmed.replace(/-/g, '+').replace(/_/g, '/');
+          while (b64.length % 4) b64 += '=';
+          const dec = atob(b64);
+          if (dec && /^https?:\/\//i.test(dec)) return dec;
+        } catch (e) {}
+
+        // Try decodeURIComponent
+        try {
+          const decUri = decodeURIComponent(trimmed);
+          if (decUri && /^https?:\/\//i.test(decUri)) return decUri;
+        } catch (e) {}
+
+        return null;
       }
 
-      if (!destination || !destination.startsWith('http')) {
-        document.getElementById('error').textContent = 'No valid destination URL found.';
+      function resolveDestination() {
+        const params = new URLSearchParams(window.location.search);
+        
+        // 1. Direct query param
+        if (params.get('url')) {
+          const u = tryDecode(params.get('url'));
+          if (u) return u;
+        }
+        if (params.get('c')) {
+          const u = tryDecode(params.get('c'));
+          if (u) return u;
+        }
+
+        // 2. Hash (#...)
+        if (window.location.hash) {
+          const hash = window.location.hash.slice(1);
+          const u = tryDecode(hash);
+          if (u) return u;
+        }
+
+        // 3. Path parameter (e.g. /r/:code or /go/:code)
+        const match = window.location.pathname.match(/^\/(?:r|go)\/(.+)$/);
+        const pathCode = match ? match[1].replace(/\/+$/, '') : '';
+        if (pathCode) {
+          const u = tryDecode(pathCode);
+          if (u) return u;
+
+          // 4. Local storage fallback
+          try {
+            const keys = ['linkpulse_links_v2', 'linko_links', 'links'];
+            for (const key of keys) {
+              const raw = localStorage.getItem(key);
+              if (raw) {
+                const list = JSON.parse(raw);
+                if (Array.isArray(list)) {
+                  const found = list.find(l => 
+                    (l.shortCode && l.shortCode.toLowerCase() === pathCode.toLowerCase()) ||
+                    (l.code && l.code.toLowerCase() === pathCode.toLowerCase()) ||
+                    (l.id && l.id.toLowerCase() === pathCode.toLowerCase())
+                  );
+                  if (found) {
+                    const dest = found.originalUrl || found.url || found.targetUrl;
+                    if (dest) return dest;
+                  }
+                }
+              }
+            }
+          } catch (e) {}
+        }
+
+        return null;
+      }
+
+      const destination = resolveDestination();
+
+      if (!destination || !/^https?:\/\//i.test(destination)) {
+        document.getElementById('spinner').style.display = 'none';
+        document.getElementById('title').textContent = 'Link Not Found';
+        document.getElementById('url-display').style.display = 'none';
+        document.getElementById('countdown').style.display = 'none';
+        document.getElementById('countdown-sub').style.display = 'none';
+        document.getElementById('error').textContent = 'No valid destination URL could be decoded.';
         document.getElementById('error').style.display = 'block';
         return;
       }
@@ -89,12 +182,19 @@
       document.getElementById('url-display').textContent = destination;
       document.title = 'Redirecting to ' + destination;
 
-      // Fire analytics (best-effort, don't block redirect)
+      const directLink = document.getElementById('direct-link');
+      directLink.href = destination;
+      directLink.style.display = 'inline-block';
+
+      // Send analytics (URL, hit timestamp, user agent is sent in headers)
       fetch('/api/analytics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: destination }),
-      }).catch(() => {});
+        body: JSON.stringify({
+          url: destination,
+          timestamp: new Date().toISOString()
+        })
+      }).catch(err => console.warn('Analytics ping failed', err));
 
       // 5-second countdown then redirect
       let remaining = 5;

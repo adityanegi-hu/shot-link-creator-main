@@ -10,7 +10,6 @@ if (typeof (process as any).loadEnvFile === 'function') {
 }
 
 import { connectDB } from './config/db.js';
-import { shortenRoutes } from './routes/shorten.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { redirectRoutes } from './routes/redirect.js';
 
@@ -28,10 +27,6 @@ async function bootstrap() {
       prefix: '/',
     });
 
-    // Serve go.html for /go (before SPA fallback)
-    fastify.get('/go', (_request, reply) => reply.sendFile('go.html'));
-
-    await shortenRoutes(fastify);
     await analyticsRoutes(fastify);
     await redirectRoutes(fastify);
 
