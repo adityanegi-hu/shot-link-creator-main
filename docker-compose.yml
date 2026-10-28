@@ -23,6 +23,8 @@ services:
       PG_PORT: 5432
       BASE_URL: http://localhost:3000
       GOOGLE_SAFE_BROWSING_KEY: ${GOOGLE_SAFE_BROWSING_KEY:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@linko.io}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
     depends_on:
       - postgres
     volumes:
