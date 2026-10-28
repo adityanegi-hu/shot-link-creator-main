@@ -2,15 +2,26 @@ import { Pool } from 'pg';
 
 let pool: Pool;
 
+function createPool(): Pool {
+  if (process.env.DATABASE_URL) {
+    const isLocal = process.env.DATABASE_URL.includes('localhost') || process.env.DATABASE_URL.includes('127.0.0.1');
+    return new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: isLocal ? undefined : { rejectUnauthorized: false },
+    });
+  }
+  return new Pool({
+    user: process.env.PG_USER || 'postgres',
+    host: process.env.PG_HOST || 'localhost',
+    database: process.env.PG_DATABASE || 'analytics_db',
+    password: process.env.PG_PASSWORD || 'your_password',
+    port: Number(process.env.PG_PORT) || 5432,
+  });
+}
+
 export async function connectDB(retries = 10, delay = 2000) {
   if (!pool) {
-    pool = new Pool({
-      user: process.env.PG_USER || 'postgres',
-      host: process.env.PG_HOST || 'localhost',
-      database: process.env.PG_DATABASE || 'analytics_db',
-      password: process.env.PG_PASSWORD || 'your_password',
-      port: Number(process.env.PG_PORT) || 5432,
-    });
+    pool = createPool();
   }
 
   for (let i = 0; i < retries; i++) {
@@ -43,13 +54,7 @@ export async function connectDB(retries = 10, delay = 2000) {
 
 export function getDB() {
   if (!pool) {
-    pool = new Pool({
-      user: process.env.PG_USER || 'postgres',
-      host: process.env.PG_HOST || 'localhost',
-      database: process.env.PG_DATABASE || 'analytics_db',
-      password: process.env.PG_PASSWORD || 'your_password',
-      port: Number(process.env.PG_PORT) || 5432,
-    });
+    pool = createPool();
   }
   return pool;
 }
