@@ -359,12 +359,11 @@
       directLink.href = destination;
       directLink.style.display = 'inline-block';
 
-      // Send Click to Analytics with Click Limit verification
+      // Send Click to Analytics with Click Limit verification (Zero URL transmission)
       fetch('/api/analytics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          url: destination,
           code: pathCode || '',
           limit: clickLimit,
           timestamp: new Date().toISOString()

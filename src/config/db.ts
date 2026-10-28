@@ -32,13 +32,15 @@ export async function connectDB(retries = 10, delay = 2000) {
         CREATE TABLE IF NOT EXISTS analytics (
           id           BIGSERIAL PRIMARY KEY,
           code         TEXT,
-          original_url TEXT NOT NULL,
+          original_url TEXT,
           clicked_at   TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
           ip_address   INET,
           user_agent   TEXT
         );
 
         ALTER TABLE analytics ADD COLUMN IF NOT EXISTS code TEXT;
+        ALTER TABLE analytics ALTER COLUMN original_url DROP NOT NULL;
+        UPDATE analytics SET original_url = NULL WHERE original_url IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_analytics_code ON analytics(code);
         CREATE INDEX IF NOT EXISTS idx_analytics_clicked_at ON analytics(clicked_at);
       `);

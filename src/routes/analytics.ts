@@ -7,8 +7,8 @@ import net from 'net';
 const codeStore = new Map<string, { url: string; limit?: number | null }>();
 
 const TrackSchema = z.object({
-  url: z.string().url(),
   code: z.string().optional().nullable(),
+  url: z.string().optional().nullable(),
   limit: z.union([z.number(), z.string()]).optional().nullable(),
   timestamp: z.any().optional(),
 }).passthrough();
@@ -47,7 +47,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
         'SELECT original_url FROM analytics WHERE code = $1 OR lower(code) = lower($1) LIMIT 1',
         [cleanCode]
       );
-      if (res.rows.length > 0) {
+      if (res.rows.length > 0 && res.rows[0].original_url) {
         return { url: res.rows[0].original_url, limit: null };
       }
     } catch (e) {}
@@ -83,7 +83,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
     };
   });
 
-  // Record a click & enforce limit
+  // Record a click & enforce limit (Privacy: original_url is NEVER saved to Postgres)
   fastify.post('/api/analytics', async (request, reply) => {
     const body = TrackSchema.parse(request.body);
     const db = getDB();
@@ -93,13 +93,10 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
     const code = body.code ? body.code.trim() : null;
     const limit = body.limit ? parseInt(String(body.limit), 10) : null;
 
-    // Check existing clicks
+    // Check existing clicks by short code
     let currentCount = 0;
     if (code) {
       const countRes = await db.query('SELECT COUNT(*) as count FROM analytics WHERE code = $1', [code]);
-      currentCount = Number(countRes.rows[0]?.count || 0);
-    } else {
-      const countRes = await db.query('SELECT COUNT(*) as count FROM analytics WHERE original_url = $1', [body.url]);
       currentCount = Number(countRes.rows[0]?.count || 0);
     }
 
@@ -114,10 +111,10 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
       });
     }
 
-    // Insert new click
+    // Insert new click - pure telemetry, zero destination URL saved
     await db.query(
-      'INSERT INTO analytics (code, original_url, ip_address, user_agent) VALUES ($1, $2, $3, $4)',
-      [code, body.url, ip, request.headers['user-agent'] || null]
+      'INSERT INTO analytics (code, ip_address, user_agent) VALUES ($1, $2, $3)',
+      [code, ip, request.headers['user-agent'] || null]
     );
 
     return reply.status(200).send({
@@ -128,9 +125,9 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
     });
   });
 
-  // Get stats for a URL or code
+  // Get stats for a code (No destination URLs exposed)
   fastify.get('/api/analytics', async (request) => {
-    const { url, code } = request.query as { url?: string; code?: string };
+    const { code } = request.query as { code?: string };
     const db = getDB();
 
     if (code) {
@@ -141,17 +138,9 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
       return res.rows[0];
     }
 
-    if (url) {
-      const res = await db.query(
-        'SELECT COUNT(*) as total, MIN(clicked_at) as first_click, MAX(clicked_at) as last_click FROM analytics WHERE original_url = $1',
-        [url]
-      );
-      return res.rows[0];
-    }
-
-    // Overall stats (latest 100 clicks)
+    // Overall stats (latest 100 clicks: ID, code, timestamp, IP)
     const res = await db.query(
-      'SELECT code, original_url, clicked_at, ip_address FROM analytics ORDER BY clicked_at DESC LIMIT 100'
+      'SELECT id, code, clicked_at, ip_address FROM analytics ORDER BY clicked_at DESC LIMIT 100'
     );
     return { clicks: res.rows };
   });
